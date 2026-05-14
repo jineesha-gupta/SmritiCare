@@ -2,52 +2,12 @@
 const Location = require("../models/Location");
 const SafeZone = require("../models/SafeZone");
 const User = require("../models/User");
-const nodemailer = require("nodemailer");
-const fs = require("fs");
-const path = require("path");
+const { Resend } = require("resend");
 
-/* MAIL SETUP */
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
-
-const EMAIL_LOGO_CID = "smriticare-logo";
-
-function getEmailLogoAttachment() {
-  const imageDir = path.join(__dirname, "../public/images");
-  const candidates = [
-    "email-logo.png",
-    "email-logo.jpg",
-    "email-logo.jpeg",
-    "email-logo.webp",
-    "email-logo.svg",
-    "smriticare-logo.png",
-    "smriticare-logo.jpg",
-    "smriticare-logo.jpeg",
-    "smriticare-logo.webp",
-    "smriticare-logo.svg"
-  ];
-
-  for (const name of candidates) {
-    const fullPath = path.join(imageDir, name);
-    if (fs.existsSync(fullPath)) {
-      return {
-        filename: name,
-        path: fullPath,
-        cid: EMAIL_LOGO_CID
-      };
-    }
-  }
-
-  return null;
-}
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 /**
- * Send safe zone alert email using the current SmritiCare email theme.
+ * Send safe zone alert email using Resend.
  */
 async function sendSafeZoneAlert(caregiver, patient, distance, safeZone) {
   try {
@@ -63,15 +23,7 @@ async function sendSafeZoneAlert(caregiver, patient, distance, safeZone) {
     const roundedDistance = Math.round(distance);
     const siteUrl = process.env.APP_URL || process.env.APP_BASE_URL || "http://localhost:3000";
     const dashboardUrl = `${siteUrl}/caregiver/location`;
-    const logoAttachment = getEmailLogoAttachment();
-    const logoSrc = logoAttachment ? `cid:${EMAIL_LOGO_CID}` : null;
-    const brandVisualMarkup = logoSrc
-      ? `<div style="width: 56px; height: 56px; border-radius: 18px; overflow: hidden; background-color: rgba(255, 255, 255, 0.92); padding: 10px; box-sizing: border-box; box-shadow: 0 12px 28px rgba(57, 72, 118, 0.14);">
-           <img src="${logoSrc}" alt="SmritiCare logo" style="display: block; width: 100%; height: 100%; object-fit: contain;" />
-         </div>`
-      : `<div style="width: 56px; height: 56px; border-radius: 18px; background-color: rgba(255, 255, 255, 0.88); color: #171b33; font-size: 20px; font-weight: 800; text-align: center; line-height: 56px; box-shadow: 0 12px 28px rgba(57, 72, 118, 0.14);">
-           SC
-         </div>`;
+
     const subject = `Safe Zone Alert: ${patient.name} has left the safe zone`;
     const text = [
       "SmritiCare Safe Zone Alert",
@@ -86,8 +38,8 @@ async function sendSafeZoneAlert(caregiver, patient, distance, safeZone) {
       "- Monitor their location over the next few minutes"
     ].join("\n");
 
-    await transporter.sendMail({
-      from: `"SmritiCare Alert" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: "SmritiCare Alert <onboarding@resend.dev>",
       to: caregiver.email,
       subject,
       text,
@@ -108,9 +60,6 @@ async function sendSafeZoneAlert(caregiver, patient, distance, safeZone) {
                       <td style="padding: 28px 32px 18px;">
                         <table role="presentation" style="width: 100%; border-collapse: collapse;">
                           <tr>
-                            <td style="width: 72px; vertical-align: middle;">
-                              ${brandVisualMarkup}
-                            </td>
                             <td style="vertical-align: middle;">
                               <p style="margin: 0; color: #1d2340; font-size: 23px; font-weight: 800; letter-spacing: -0.03em;">SmritiCare</p>
                               <p style="margin: 5px 0 0; font-size: 14px; color: #7280a0;">Bring every care detail into one calm flow</p>
@@ -190,119 +139,12 @@ async function sendSafeZoneAlert(caregiver, patient, distance, safeZone) {
             </table>
           </body>
         </html>
-      `,
-      attachments: logoAttachment ? [logoAttachment] : undefined
+      `
     });
 
     console.log(`Safe zone alert sent to ${caregiver.email}`);
   } catch (err) {
     console.error("Failed to send safe zone alert:", err);
-    throw new Error("Failed to send alert email");
-  }
-}
-
-/**
- * Legacy safe zone alert email kept for reference while the new theme rolls out.
- */
-async function sendSafeZoneAlertLegacy(caregiver, patient, distance, safeZone) {
-  try {
-    const alertTime = new Date().toLocaleString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-
-    await transporter.sendMail({
-      from: `"SmritiCare Alert" <${process.env.EMAIL_USER}>`,
-      to: caregiver.email,
-      subject: `🚨 ALERT: ${patient.name} has left their safe zone`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff;">
-          
-          <!-- Header -->
-          <div style="background: linear-gradient(135deg, #d86b86 0%, #f3b0a8 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="margin: 0; font-size: 28px;">🚨 Safe Zone Alert</h1>
-            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Patient has left their safe zone</p>
-          </div>
-
-          <!-- Main Content -->
-          <div style="padding: 30px; background: #fff6fa; border: 1px solid #eadfd4;">
-            
-            <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #d86b86;">
-              <h2 style="margin: 0 0 15px 0; color: #3d3a37; font-size: 20px;">⚠️ Alert Details</h2>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 8px 0; color: #8c857d; font-size: 14px;">Patient:</td>
-                  <td style="padding: 8px 0; color: #3d3a37; font-weight: 600; font-size: 14px;">${patient.name}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; color: #8c857d; font-size: 14px;">Time:</td>
-                  <td style="padding: 8px 0; color: #3d3a37; font-weight: 600; font-size: 14px;">${alertTime}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; color: #8c857d; font-size: 14px;">Safe Zone:</td>
-                  <td style="padding: 8px 0; color: #3d3a37; font-weight: 600; font-size: 14px;">${safeZone.name}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; color: #8c857d; font-size: 14px;">Address:</td>
-                  <td style="padding: 8px 0; color: #3d3a37; font-weight: 600; font-size: 14px;">${safeZone.address}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; color: #8c857d; font-size: 14px;">Distance:</td>
-                  <td style="padding: 8px 0; color: #d86b86; font-weight: 700; font-size: 16px;">${Math.round(distance)}m outside safe zone</td>
-                </tr>
-              </table>
-            </div>
-
-            <div style="background: #fbeaec; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #f3b0a8;">
-              <p style="margin: 0; color: #5b5754; font-size: 14px; line-height: 1.6;">
-                <strong>📍 What This Means:</strong><br>
-                ${patient.name} is currently ${Math.round(distance)} meters away from their designated safe zone (${safeZone.name}). 
-                This could indicate they have wandered away or left their usual area.
-              </p>
-            </div>
-
-            <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-              <h3 style="margin: 0 0 12px 0; color: #3d3a37; font-size: 16px;">✅ Recommended Actions:</h3>
-              <ul style="margin: 0; padding-left: 20px; color: #5b5754; line-height: 1.8; font-size: 14px;">
-                <li>Check their current location on the SmritiCare dashboard</li>
-                <li>Try calling ${patient.name} to confirm they're safe</li>
-                <li>If you can't reach them, consider checking common locations</li>
-                <li>Monitor their location for the next 15-30 minutes</li>
-              </ul>
-            </div>
-
-            <!-- Action Button -->
-            <div style="text-align: center; margin: 25px 0;">
-              <a href="${process.env.APP_URL || 'http://localhost:3000'}/caregiver/location" 
-                 style="display: inline-block; background: linear-gradient(135deg, #d86b86 0%, #f3b0a8 100%); 
-                        color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; 
-                        font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(216, 107, 134, 0.35);">
-                📍 View Live Location
-              </a>
-            </div>
-
-          </div>
-
-          <!-- Footer -->
-          <div style="background: #f4cdd6; color: #5b5754; padding: 20px; text-align: center; font-size: 12px; border-radius: 0 0 8px 8px;">
-            <p style="margin: 0 0 8px 0;">This is an automated alert from SmritiCare</p>
-            <p style="margin: 0; opacity: 0.7;">
-              You're receiving this because you're registered as the caregiver for ${patient.name}
-            </p>
-          </div>
-
-        </div>
-      `
-    });
-
-    console.log(`✅ Safe zone alert sent to ${caregiver.email}`);
-  } catch (err) {
-    console.error("❌ Failed to send safe zone alert:", err);
     throw new Error("Failed to send alert email");
   }
 }
@@ -363,14 +205,14 @@ exports.updateLocation = async (req, res) => {
     // Check safe zone if patient is linked to a caregiver
     if (user.linked && user.linkedUser) {
       try {
-        const safeZone = await SafeZone.findOne({ 
+        const safeZone = await SafeZone.findOne({
           patientId: userId,
-          isActive: true 
+          isActive: true
         });
 
         if (safeZone) {
           const isInside = safeZone.isInsideSafeZone(lat, lng);
-          
+
           if (!isInside) {
             // Patient is outside safe zone
             const [zoneLng, zoneLat] = safeZone.coordinates.coordinates;
@@ -386,7 +228,7 @@ exports.updateLocation = async (req, res) => {
 
               if (caregiver && caregiver.email) {
                 await sendSafeZoneAlert(caregiver, patient, distanceOutside, safeZone);
-                
+
                 // Update last alert time
                 safeZone.lastAlertSent = new Date();
                 await safeZone.save();
@@ -472,9 +314,9 @@ exports.getPatientLocation = async (req, res) => {
     const [longitude, latitude] = location.coordinates.coordinates;
 
     // Get safe zone info
-    const safeZone = await SafeZone.findOne({ 
+    const safeZone = await SafeZone.findOne({
       patientId,
-      isActive: true 
+      isActive: true
     }).lean();
 
     let safeZoneStatus = null;
@@ -482,7 +324,7 @@ exports.getPatientLocation = async (req, res) => {
       const [zoneLng, zoneLat] = safeZone.coordinates.coordinates;
       const distance = calculateDistance(zoneLat, zoneLng, latitude, longitude);
       const isInside = distance <= safeZone.radius;
-      
+
       safeZoneStatus = {
         isInside,
         distance: Math.round(distance),
@@ -737,8 +579,6 @@ exports.setSafeZone = async (req, res) => {
       },
       radius: parsedRadius,
       isActive: true,
-      // Clear lastAlertSent so future alerts work normally.
-      // If patient is already outside we'll send an alert now and stamp it below.
       lastAlertSent: null
     };
 
@@ -753,7 +593,7 @@ exports.setSafeZone = async (req, res) => {
     if (patientIsOutside) {
       try {
         const caregiver = await User.findById(req.session.user.id);
-        const patient   = await User.findById(patientId);
+        const patient = await User.findById(patientId);
         if (caregiver && patient && caregiver.email) {
           await sendSafeZoneAlert(caregiver, patient, distanceOutside, safeZone);
           safeZone.lastAlertSent = new Date();
@@ -815,8 +655,8 @@ exports.getSafeZone = async (req, res) => {
       });
     }
 
-    const safeZone = await SafeZone.findOne({ 
-      patientId: targetPatientId 
+    const safeZone = await SafeZone.findOne({
+      patientId: targetPatientId
     }).lean();
 
     if (!safeZone) {

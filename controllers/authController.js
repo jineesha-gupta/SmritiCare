@@ -3,7 +3,7 @@ const User = require("../models/User");
 const PatientProfile = require("../models/PatientProfile");
 const CaregiverProfile = require("../models/CaregiverProfile");
 const InviteCode = require("../models/InviteCode");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 const { getAuthUrl, exchangeCodeForTokens } = require("../utils/googleCalendar");
 const {
   EMAIL_LOGO_CID,
@@ -12,14 +12,8 @@ const {
   buildEmailLayout
 } = require("../utils/emailTheme");
 
-/* MAIL SETUP */
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+/* RESEND SETUP */
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const DEFAULT_SITE_URL = `http://localhost:${process.env.PORT || 3000}`;
 const SITE_URL = (process.env.APP_BASE_URL || process.env.APP_URL || DEFAULT_SITE_URL).trim();
@@ -79,17 +73,17 @@ async function sendOTP(email, otp) {
     const title = "Email Verification";
     const subtitle = "Use the OTP below to verify your SmritiCare account and continue setup.";
     const note = "If you did not request this, please ignore this email.";
-    const logoAttachment = getEmailLogoAttachment();
-    const logoSrc = logoAttachment ? `cid:${EMAIL_LOGO_CID}` : null;
 
-    await transporter.sendMail({
-      from: `"SmritiCare" <${process.env.EMAIL_USER}>`,
+    // Build HTML using existing theme (logoSrc will be null since Resend doesn't support CID attachments)
+    const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
+
+    await resend.emails.send({
+      from: "SmritiCare <onboarding@resend.dev>",
       to: email,
       subject: "SmritiCare - Email Verification",
-      text: `SmritiCare Email Verification\n\nOTP: ${otp}\nThis code is valid for 5 minutes.\nIf you did not request this, please ignore this email.`,
-      html: buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc }),
-      attachments: logoAttachment ? [logoAttachment] : undefined
+      html: htmlContent
     });
+
     console.log(` OTP sent to ${email}`);
   } catch (err) {
     console.error(" Failed to send OTP email:", err);
@@ -106,17 +100,16 @@ async function sendPasswordResetCode(email, otp) {
     const title = "Password Reset Code";
     const subtitle = "Use this OTP to securely reset your SmritiCare password.";
     const note = "If you did not request a password reset, you can ignore this email.";
-    const logoAttachment = getEmailLogoAttachment();
-    const logoSrc = logoAttachment ? `cid:${EMAIL_LOGO_CID}` : null;
 
-    await transporter.sendMail({
-      from: `"SmritiCare" <${process.env.EMAIL_USER}>`,
+    const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
+
+    await resend.emails.send({
+      from: "SmritiCare <onboarding@resend.dev>",
       to: email,
       subject: "SmritiCare - Password Reset Code",
-      text: `SmritiCare Password Reset\n\nReset code: ${otp}\nThis code is valid for 5 minutes.\nIf you did not request this, you can ignore this email.`,
-      html: buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc }),
-      attachments: logoAttachment ? [logoAttachment] : undefined
+      html: htmlContent
     });
+
     console.log(` Password reset code sent to ${email}`);
   } catch (err) {
     console.error(" Failed to send password reset email:", err);
@@ -209,7 +202,7 @@ exports.signup = async (req, res) => {
         code,
         patientId: user._id,
         used: false,
-        expiresAt: Date.now() +  24 * 60 * 60 * 1000 // 7 days
+        expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 7 days
       });
 
       console.log(` Patient profile created with invite code: ${code}`);
@@ -237,9 +230,9 @@ exports.signup = async (req, res) => {
     req.session.tempUser = user._id.toString();
     await req.session.save();
 
-    return res.json({ 
+    return res.json({
       success: true,
-      message: "OTP sent to your email" 
+      message: "OTP sent to your email"
     });
 
   } catch (err) {
@@ -312,8 +305,8 @@ exports.verifyOTP = async (req, res) => {
     await req.session.save();
 
     // Determine redirect
-    const redirect = user.role === "patient" 
-      ? "/patient/welcome" 
+    const redirect = user.role === "patient"
+      ? "/patient/welcome"
       : "/caregiver/link";
 
     return res.json({
@@ -455,9 +448,9 @@ exports.resendOTP = async (req, res) => {
       return res.status(500).json({ error: "Failed to send email. Please try again." });
     }
 
-    res.json({ 
+    res.json({
       success: true,
-      message: "New OTP sent to your email" 
+      message: "New OTP sent to your email"
     });
 
   } catch (err) {
