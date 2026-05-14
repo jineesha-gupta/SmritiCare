@@ -230,6 +230,8 @@ exports.signup = async (req, res) => {
     req.session.tempUser = user._id.toString();
     await req.session.save();
 
+    console.log(`Session saved for signup: tempUser = ${req.session.tempUser}`);
+
     return res.json({
       success: true,
       message: "OTP sent to your email"

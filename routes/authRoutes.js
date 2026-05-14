@@ -55,6 +55,7 @@ router.get("/forgot-password/new-password", (req, res) => {
 });
 
 router.get("/verify-otp", (req, res) => {
+  console.log(`GET /verify-otp: tempUser = ${req.session.tempUser}, user = ${req.session.user?.email || 'none'}`);
   if (!req.session.tempUser) {
     return res.redirect("/auth/signup");
   }
