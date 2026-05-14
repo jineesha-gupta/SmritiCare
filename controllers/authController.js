@@ -1,4 +1,5 @@
 const bcrypt = require("bcryptjs");
+const nodemailer = require("nodemailer");
 const User = require("../models/User");
 const PatientProfile = require("../models/PatientProfile");
 const CaregiverProfile = require("../models/CaregiverProfile");
@@ -11,6 +12,20 @@ const {
   escapeHtml,
   buildEmailLayout
 } = require("../utils/emailTheme");
+
+const EMAIL_FROM = process.env.EMAIL_FROM || `SmritiCare <${process.env.EMAIL_USER || "onboarding@resend.dev"}>`;
+const RESEND_FROM = process.env.RESEND_FROM || "SmritiCare <onboarding@resend.dev>";
+
+let smtpTransporter = null;
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  smtpTransporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+}
 
 /* RESEND SETUP */
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -68,25 +83,48 @@ function buildCodeEmailTemplate({ title, subtitle, code, note, logoSrc }) {
   });
 }
 
+async function sendEmailFallback({ to, subject, html, text }) {
+  if (!smtpTransporter) {
+    throw new Error("SMTP email fallback is not configured");
+  }
+
+  await smtpTransporter.sendMail({
+    from: EMAIL_FROM,
+    to,
+    subject,
+    text: text || html.replace(/<[^>]+>/g, " "),
+    html
+  });
+}
+
 async function sendOTP(email, otp) {
+  const title = "Email Verification";
+  const subtitle = "Use the OTP below to verify your SmritiCare account and continue setup.";
+  const note = "If you did not request this, please ignore this email.";
+
+  const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
+
   try {
-    const title = "Email Verification";
-    const subtitle = "Use the OTP below to verify your SmritiCare account and continue setup.";
-    const note = "If you did not request this, please ignore this email.";
-
-    // Build HTML using existing theme (logoSrc will be null since Resend doesn't support CID attachments)
-    const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
-
     await resend.emails.send({
-      from: "SmritiCare <onboarding@resend.dev>",
+      from: RESEND_FROM,
       to: email,
       subject: "SmritiCare - Email Verification",
       html: htmlContent
     });
 
-    console.log(` OTP sent to ${email}`);
+    console.log(` OTP sent to ${email} via Resend`);
   } catch (err) {
-    console.error(" Failed to send OTP email:", err);
+    console.error(" Failed to send OTP email via Resend:", err);
+    if (smtpTransporter) {
+      console.log(" Falling back to SMTP email sender");
+      await sendEmailFallback({
+        to: email,
+        subject: "SmritiCare - Email Verification",
+        html: htmlContent
+      });
+      console.log(` OTP sent to ${email} via SMTP fallback`);
+      return;
+    }
     throw new Error("Failed to send verification email");
   }
 }
@@ -96,23 +134,33 @@ function generateOTP() {
 }
 
 async function sendPasswordResetCode(email, otp) {
+  const title = "Password Reset Code";
+  const subtitle = "Use this OTP to securely reset your SmritiCare password.";
+  const note = "If you did not request a password reset, you can ignore this email.";
+
+  const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
+
   try {
-    const title = "Password Reset Code";
-    const subtitle = "Use this OTP to securely reset your SmritiCare password.";
-    const note = "If you did not request a password reset, you can ignore this email.";
-
-    const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
-
     await resend.emails.send({
-      from: "SmritiCare <onboarding@resend.dev>",
+      from: RESEND_FROM,
       to: email,
       subject: "SmritiCare - Password Reset Code",
       html: htmlContent
     });
 
-    console.log(` Password reset code sent to ${email}`);
+    console.log(` Password reset code sent to ${email} via Resend`);
   } catch (err) {
-    console.error(" Failed to send password reset email:", err);
+    console.error(" Failed to send password reset email via Resend:", err);
+    if (smtpTransporter) {
+      console.log(" Falling back to SMTP email sender for password reset");
+      await sendEmailFallback({
+        to: email,
+        subject: "SmritiCare - Password Reset Code",
+        html: htmlContent
+      });
+      console.log(` Password reset code sent to ${email} via SMTP fallback`);
+      return;
+    }
     throw new Error("Failed to send reset code");
   }
 }
@@ -234,6 +282,7 @@ exports.signup = async (req, res) => {
 
     return res.json({
       success: true,
+      redirect: "/auth/verify-otp",
       message: "OTP sent to your email"
     });
 

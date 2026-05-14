@@ -230,7 +230,7 @@ async function signup(e) {
       return;
     }
 
-    window.location.href = "/auth/verify-otp";
+    window.location.href = data.redirect || "/auth/verify-otp";
   } catch (fetchError) {
     error.innerText = "Network error. Please try again.";
     btn.disabled = false;
