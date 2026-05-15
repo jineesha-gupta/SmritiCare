@@ -2,6 +2,7 @@ const axios = require("axios");
 
 const SENDGRID_API_KEY = (process.env.EMAIL_PASS || "").trim();
 const EMAIL_FROM = (process.env.EMAIL_FROM || "SmritiCare <noreply@smriticare.app>").trim();
+const LIST_UNSUBSCRIBE = (process.env.LIST_UNSUBSCRIBE || "").trim();
 
 const emailConfigured = Boolean(SENDGRID_API_KEY);
 
@@ -27,6 +28,10 @@ const transporter = {
       fromEmail = fromMatch[1].trim();
     }
 
+    // Build List-Unsubscribe header value. Prefer explicit env var, fallback to postmaster@from-domain
+    const fromDomain = fromEmail.split("@")[1] || "smriticare.app";
+    const unsubscribeAddress = LIST_UNSUBSCRIBE || `mailto:postmaster@${fromDomain}`;
+
     const payload = {
       personalizations: [
         {
@@ -37,6 +42,10 @@ const transporter = {
       from: {
         email: fromEmail,
         name: fromName
+      },
+      reply_to: { email: fromEmail, name: fromName },
+      headers: {
+        "List-Unsubscribe": `<${unsubscribeAddress}>`
       },
       content: [
         {
