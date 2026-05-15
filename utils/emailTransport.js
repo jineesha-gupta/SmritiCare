@@ -1,33 +1,82 @@
-const nodemailer = require("nodemailer");
+const axios = require("axios");
 
-const EMAIL_USER = (process.env.EMAIL_USER || "").trim();
-const EMAIL_PASS = (process.env.EMAIL_PASS || "").replace(/\s+/g, "").trim();
-const DEFAULT_FROM = "SmritiCare <noreply@smriticare.app>";
-const EMAIL_FROM = (process.env.EMAIL_FROM || (EMAIL_USER && EMAIL_USER.toLowerCase() !== "apikey" ? `SmritiCare <${EMAIL_USER}>` : DEFAULT_FROM)).trim();
-const SMTP_HOST = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-const SMTP_SECURE = process.env.SMTP_SECURE === "true" ? true : process.env.SMTP_SECURE === "false" ? false : SMTP_PORT === 465;
-const SMTP_REQUIRE_TLS = process.env.SMTP_REQUIRE_TLS === "true" ? true : process.env.SMTP_REQUIRE_TLS === "false" ? false : !SMTP_SECURE;
+const SENDGRID_API_KEY = (process.env.EMAIL_PASS || "").trim();
+const EMAIL_FROM = (process.env.EMAIL_FROM || "SmritiCare <noreply@smriticare.app>").trim();
 
-const emailConfigured = Boolean(EMAIL_USER && EMAIL_PASS && SMTP_HOST && SMTP_PORT);
+const emailConfigured = Boolean(SENDGRID_API_KEY);
 
-const transporter = emailConfigured
-  ? nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_SECURE,
-      requireTLS: SMTP_REQUIRE_TLS,
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-      logger: true,
-      debug: true,
-      auth: {
-        user: EMAIL_USER,
-        pass: EMAIL_PASS
+/**
+ * SendGrid Web API v3 - uses HTTPS (won't be blocked by Render)
+ * Replaces nodemailer SMTP transport.
+ */
+const transporter = {
+  async sendMail({ to, subject, html, text }) {
+    if (!SENDGRID_API_KEY) {
+      throw new Error("SendGrid API key not configured");
+    }
+
+    // Parse EMAIL_FROM to extract name and address
+    let fromEmail = "noreply@smriticare.app";
+    let fromName = "SmritiCare";
+
+    const fromMatch = EMAIL_FROM.match(/^(.+?)\s*<(.+?)>$/) || EMAIL_FROM.match(/^(.+?)$/);
+    if (fromMatch && fromMatch[2]) {
+      fromName = fromMatch[1].trim();
+      fromEmail = fromMatch[2].trim();
+    } else if (fromMatch && fromMatch[1]) {
+      fromEmail = fromMatch[1].trim();
+    }
+
+    const payload = {
+      personalizations: [
+        {
+          to: [{ email: to }],
+          subject
+        }
+      ],
+      from: {
+        email: fromEmail,
+        name: fromName
+      },
+      content: [
+        {
+          type: "text/html",
+          value: html || text || ""
+        }
+      ]
+    };
+
+    try {
+      const response = await axios.post("https://api.sendgrid.com/v3/mail/send", payload, {
+        headers: {
+          Authorization: `Bearer ${SENDGRID_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 10000
+      });
+
+      if (response.status >= 200 && response.status < 300) {
+        return { success: true, messageId: response.headers["x-message-id"] };
+      } else {
+        throw new Error(`SendGrid API error: ${response.status}`);
       }
-    })
-  : null;
+    } catch (err) {
+      console.error("SendGrid Web API error:", {
+        message: err.message,
+        status: err.response?.status,
+        data: err.response?.data
+      });
+      throw err;
+    }
+  },
+
+  async verify() {
+    if (!SENDGRID_API_KEY) {
+      throw new Error("SendGrid API key not configured");
+    }
+    return true; // Basic verification; SendGrid API calls will fail if key is invalid
+  }
+};
 
 module.exports = {
   transporter,

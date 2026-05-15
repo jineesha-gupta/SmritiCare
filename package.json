@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/Pragya-Bhardwaj/SmritiCare#readme",
   "dependencies": {
+    "axios": "^1.16.1",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^1.41.3",
     "connect-mongo": "^5.1.0",
