@@ -16,6 +16,12 @@ if (EMAIL_USER && EMAIL_PASS) {
     host: SMTP_HOST,
     port: SMTP_PORT,
     secure: SMTP_PORT === 465,
+    requireTLS: SMTP_PORT !== 465,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+    logger: true,
+    debug: true,
     auth: {
       user: EMAIL_USER,
       pass: EMAIL_PASS
