@@ -5,15 +5,12 @@ const MISSED_GRACE_MINUTES = 30;
 const BROWSER_NOTIFICATION_CHECK_MS = 30 * 1000;
 let browserNotificationTimer = null;
 
-/* INITIALIZATION */
-document.addEventListener('DOMContentLoaded', async () => {
-  await initializeBrowserNotifications();
-  await loadReminders();
-  setupCategoryTabs();
-  startBrowserNotificationWatcher();
-  checkGoogleCalendarStatus();
-  handleCalendarUrlParams();
-// Google Calendar banner logic (same as caregiver)
+/* ─────────────────────────────────────────
+   GOOGLE CALENDAR BANNER
+   These functions are at TOP LEVEL so they
+   can be called from anywhere in the file.
+───────────────────────────────────────── */
+
 function handleCalendarUrlParams() {
   const params = new URLSearchParams(window.location.search);
   if (params.get("calendarConnected") === "true") {
@@ -72,9 +69,22 @@ function showToast(message, type = "success") {
     toast.classList.remove("show");
   }, 4000);
 }
+
+/* ─────────────────────────────────────────
+   INITIALIZATION
+───────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', async () => {
+  await initializeBrowserNotifications();
+  await loadReminders();
+  setupCategoryTabs();
+  startBrowserNotificationWatcher();
+  checkGoogleCalendarStatus();
+  handleCalendarUrlParams();
 });
 
-/* LOAD REMINDERS FROM SERVER */
+/* ─────────────────────────────────────────
+   LOAD REMINDERS FROM SERVER
+───────────────────────────────────────── */
 async function loadReminders() {
   try {
     const res = await fetch("/reminder/api/reminders", { 
@@ -95,7 +105,9 @@ async function loadReminders() {
   }
 }
 
-/* BROWSER NOTIFICATIONS */
+/* ─────────────────────────────────────────
+   BROWSER NOTIFICATIONS
+───────────────────────────────────────── */
 async function initializeBrowserNotifications() {
   if (!("Notification" in window)) {
     return;
@@ -222,20 +234,16 @@ function toDateKey(date) {
   return `${y}-${m}-${d}`;
 }
 
-/* RENDER REMINDERS */
+/* ─────────────────────────────────────────
+   RENDER REMINDERS
+───────────────────────────────────────── */
 function renderReminders() {
   const list = document.getElementById('remindersList');
   if (!list) return;
 
-  // Filter by category if needed
-  let filtered = allReminders;
-  if (currentCategory !== 'All') {
-    filtered = allReminders.filter(r => r.category === currentCategory);
-  }
-
-  // Segregate reminders by category
   const categories = ['Medicine', 'Meal', 'Appointment', 'Hygiene', 'Other'];
   let html = '';
+
   if (currentCategory === 'All') {
     categories.forEach(cat => {
       const catReminders = allReminders.filter(r => r.category === cat);
@@ -255,6 +263,7 @@ function renderReminders() {
       html = `<div class="card" style="text-align: center; padding: 40px; color: #999;"><p>No reminders yet</p></div>`;
     }
   } else {
+    const filtered = allReminders.filter(r => r.category === currentCategory);
     if (filtered.length === 0) {
       html = `<div class="card" style="text-align: center; padding: 40px; color: #999;"><p>No reminders yet</p></div>`;
     } else {
@@ -268,55 +277,31 @@ function renderReminders() {
       `).join('');
     }
   }
+
   list.innerHTML = html;
-// Setup sync button for patient
-function setupSyncButton() {
-  const btn = document.getElementById('syncCalendarBtn');
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    btn.textContent = 'Syncing...';
-    try {
-      // Call backend to trigger calendar sync for patient
-      const res = await fetch('/reminder/api/reminders/calendar/auth-url', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to get calendar auth URL');
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert('Unable to sync calendar.');
-      }
-    } catch (err) {
-      alert('Sync failed.');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Sync Google Calendar';
-    }
-  });
+  // ← setupSyncButton was incorrectly defined INSIDE renderReminders before. It has been removed
+  //   since the sync button does not exist in the patient reminders HTML.
 }
 
-}
-
-/* SETUP CATEGORY TABS */
+/* ─────────────────────────────────────────
+   SETUP CATEGORY TABS
+───────────────────────────────────────── */
 function setupCategoryTabs() {
   const tabs = document.querySelectorAll('.filter-tabs .tab');
   
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      // Remove active class from all tabs
       tabs.forEach(t => t.classList.remove('active'));
-      
-      // Add active class to clicked tab
       tab.classList.add('active');
-      
-      // Update current category and re-render
       currentCategory = tab.textContent.trim();
       renderReminders();
     });
   });
 }
 
-/* UTILITY FUNCTIONS */
+/* ─────────────────────────────────────────
+   UTILITY FUNCTIONS
+───────────────────────────────────────── */
 function formatTime(time) {
   if (!time) return "--:--";
   const parts = time.split(':');

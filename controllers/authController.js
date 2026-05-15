@@ -18,6 +18,8 @@ const EMAIL_USER = (process.env.EMAIL_USER || "").trim();
 // SMTP expects the raw 16-character value, so remove whitespace.
 const EMAIL_PASS = (process.env.EMAIL_PASS || "").replace(/\s+/g, "").trim();
 const EMAIL_FROM = (process.env.EMAIL_FROM || `SmritiCare <${EMAIL_USER || "onboarding@resend.dev"}>`).trim();
+const SMTP_HOST = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const RESEND_API_KEY = (process.env.RESEND_API_KEY || "").trim();
 const RESEND_FROM = (process.env.RESEND_FROM || "SmritiCare <onboarding@resend.dev>").trim();
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
@@ -25,7 +27,9 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 let smtpTransporter = null;
 if (EMAIL_USER && EMAIL_PASS) {
   smtpTransporter = nodemailer.createTransport({
-    service: "gmail",
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000,
@@ -55,6 +59,10 @@ function assertEmailProviderReady() {
       "Resend is using onboarding@resend.dev. Verify a domain in Resend and set RESEND_FROM, or configure Gmail SMTP."
     );
   }
+}
+
+function hasResendProvider() {
+  return Boolean(resend);
 }
 
 async function sendWithResend({ to, subject, html }) {
@@ -160,6 +168,10 @@ async function sendOTP(email, otp) {
       console.log(` OTP sent to ${email} via SMTP`);
       return;
     } catch (smtpErr) {
+      if (!hasResendProvider()) {
+        console.error(" SMTP failed and Resend is not configured:", smtpErr.message);
+        throw smtpErr;
+      }
       console.error(" SMTP failed, trying Resend:", smtpErr.message);
     }
   }
@@ -202,6 +214,10 @@ async function sendPasswordResetCode(email, otp) {
       console.log(` Password reset code sent to ${email} via SMTP`);
       return;
     } catch (smtpErr) {
+      if (!hasResendProvider()) {
+        console.error(" SMTP failed and Resend is not configured:", smtpErr.message);
+        throw smtpErr;
+      }
       console.error(" SMTP failed, trying Resend:", smtpErr.message);
     }
   }

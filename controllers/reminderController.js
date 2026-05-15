@@ -1,3 +1,5 @@
+const User = require("../models/User");
+
 // Calendar sync stub handlers to fix router error
 exports.getCalendarAuthUrl = (req, res) => {
   res.status(501).json({ error: "Not implemented", message: "getCalendarAuthUrl not implemented" });

@@ -401,13 +401,7 @@ function openEditModal(reminderId) {
 
   document.getElementById("reminderModal").classList.remove("hidden");
 // Show/hide extra fields based on frequency
-function handleFrequencyChange() {
-  const freq = document.getElementById("reminderClassification").value;
-  document.getElementById("weeklyOptions").style.display = freq === "Weekly" ? "block" : "none";
-  document.getElementById("monthlyOptions").style.display = freq === "Monthly" ? "block" : "none";
-  document.getElementById("yearlyOptions").style.display = freq === "Yearly" ? "block" : "none";
-  document.getElementById("onceOptions").style.display = freq === "Once" ? "block" : "none";
-}
+
 }
 
 function openDeleteModal(reminderId) {
