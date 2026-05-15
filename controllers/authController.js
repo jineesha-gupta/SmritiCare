@@ -101,9 +101,25 @@ async function sendOTP(email, otp) {
   const title = "Email Verification";
   const subtitle = "Use the OTP below to verify your SmritiCare account and continue setup.";
   const note = "If you did not request this, please ignore this email.";
-
   const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
 
+  // SMTP first — works with ANY recipient, no domain restrictions
+  if (smtpTransporter) {
+    try {
+      await sendEmailFallback({
+        to: email,
+        subject: "SmritiCare - Email Verification",
+        html: htmlContent
+      });
+      console.log(` OTP sent to ${email} via SMTP`);
+      return;
+    } catch (smtpErr) {
+      console.error(" SMTP failed, trying Resend:", smtpErr.message);
+    }
+  }
+
+  // Resend fallback — only reaches here if SMTP not configured or failed
+  // NOTE: without a verified domain, Resend only delivers to your own account email
   try {
     await resend.emails.send({
       from: RESEND_FROM,
@@ -111,20 +127,9 @@ async function sendOTP(email, otp) {
       subject: "SmritiCare - Email Verification",
       html: htmlContent
     });
-
     console.log(` OTP sent to ${email} via Resend`);
   } catch (err) {
     console.error(" Failed to send OTP email via Resend:", err);
-    if (smtpTransporter) {
-      console.log(" Falling back to SMTP email sender");
-      await sendEmailFallback({
-        to: email,
-        subject: "SmritiCare - Email Verification",
-        html: htmlContent
-      });
-      console.log(` OTP sent to ${email} via SMTP fallback`);
-      return;
-    }
     throw new Error("Failed to send verification email");
   }
 }
@@ -137,9 +142,24 @@ async function sendPasswordResetCode(email, otp) {
   const title = "Password Reset Code";
   const subtitle = "Use this OTP to securely reset your SmritiCare password.";
   const note = "If you did not request a password reset, you can ignore this email.";
-
   const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
 
+  // SMTP first — works with ANY recipient, no domain restrictions
+  if (smtpTransporter) {
+    try {
+      await sendEmailFallback({
+        to: email,
+        subject: "SmritiCare - Password Reset Code",
+        html: htmlContent
+      });
+      console.log(` Password reset code sent to ${email} via SMTP`);
+      return;
+    } catch (smtpErr) {
+      console.error(" SMTP failed, trying Resend:", smtpErr.message);
+    }
+  }
+
+  // Resend fallback
   try {
     await resend.emails.send({
       from: RESEND_FROM,
@@ -147,20 +167,9 @@ async function sendPasswordResetCode(email, otp) {
       subject: "SmritiCare - Password Reset Code",
       html: htmlContent
     });
-
     console.log(` Password reset code sent to ${email} via Resend`);
   } catch (err) {
     console.error(" Failed to send password reset email via Resend:", err);
-    if (smtpTransporter) {
-      console.log(" Falling back to SMTP email sender for password reset");
-      await sendEmailFallback({
-        to: email,
-        subject: "SmritiCare - Password Reset Code",
-        html: htmlContent
-      });
-      console.log(` Password reset code sent to ${email} via SMTP fallback`);
-      return;
-    }
     throw new Error("Failed to send reset code");
   }
 }
