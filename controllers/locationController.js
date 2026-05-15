@@ -1,15 +1,37 @@
 /// controllers/locationController.js
+const nodemailer = require("nodemailer");
 const Location = require("../models/Location");
 const SafeZone = require("../models/SafeZone");
 const User = require("../models/User");
-const { Resend } = require("resend");
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const EMAIL_USER = (process.env.EMAIL_USER || "").trim();
+const EMAIL_PASS = (process.env.EMAIL_PASS || "").replace(/\s+/g, "").trim();
+const EMAIL_FROM = (process.env.EMAIL_FROM || `SmritiCare <${EMAIL_USER || "noreply@smriticare.app"}>`).trim();
+const SMTP_HOST = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+
+let smtpTransporter = null;
+if (EMAIL_USER && EMAIL_PASS) {
+  smtpTransporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: {
+      user: EMAIL_USER,
+      pass: EMAIL_PASS
+    }
+  });
+}
 
 /**
- * Send safe zone alert email using Resend.
+ * Send safe zone alert email using SMTP.
  */
 async function sendSafeZoneAlert(caregiver, patient, distance, safeZone) {
+  if (!smtpTransporter) {
+    console.error("SMTP email is not configured. Safe zone alert email will not be sent.");
+    return;
+  }
+
   try {
     const alertTime = new Date().toLocaleString("en-US", {
       weekday: "long",
@@ -38,8 +60,8 @@ async function sendSafeZoneAlert(caregiver, patient, distance, safeZone) {
       "- Monitor their location over the next few minutes"
     ].join("\n");
 
-    await resend.emails.send({
-      from: "SmritiCare Alert <onboarding@resend.dev>",
+    await smtpTransporter.sendMail({
+      from: EMAIL_FROM,
       to: caregiver.email,
       subject,
       text,

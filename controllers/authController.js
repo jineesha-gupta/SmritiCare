@@ -4,7 +4,6 @@ const User = require("../models/User");
 const PatientProfile = require("../models/PatientProfile");
 const CaregiverProfile = require("../models/CaregiverProfile");
 const InviteCode = require("../models/InviteCode");
-const { Resend } = require("resend");
 const { getAuthUrl, exchangeCodeForTokens } = require("../utils/googleCalendar");
 const {
   EMAIL_LOGO_CID,
@@ -17,12 +16,9 @@ const EMAIL_USER = (process.env.EMAIL_USER || "").trim();
 // Gmail app passwords are often copied as "abcd efgh ijkl mnop".
 // SMTP expects the raw 16-character value, so remove whitespace.
 const EMAIL_PASS = (process.env.EMAIL_PASS || "").replace(/\s+/g, "").trim();
-const EMAIL_FROM = (process.env.EMAIL_FROM || `SmritiCare <${EMAIL_USER || "onboarding@resend.dev"}>`).trim();
+const EMAIL_FROM = (process.env.EMAIL_FROM || `SmritiCare <${EMAIL_USER || "noreply@smriticare.app"}>`).trim();
 const SMTP_HOST = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-const RESEND_API_KEY = (process.env.RESEND_API_KEY || "").trim();
-const RESEND_FROM = (process.env.RESEND_FROM || "SmritiCare <onboarding@resend.dev>").trim();
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 let smtpTransporter = null;
 if (EMAIL_USER && EMAIL_PASS) {
@@ -40,46 +36,10 @@ if (EMAIL_USER && EMAIL_PASS) {
   });
 }
 
-/* RESEND SETUP */
-const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
-
-function isResendTestSender() {
-  return /onboarding@resend\.dev/i.test(RESEND_FROM);
-}
-
 function assertEmailProviderReady() {
   if (smtpTransporter) return;
 
-  if (!resend) {
-    throw new Error("No email provider configured. Set EMAIL_USER/EMAIL_PASS or RESEND_API_KEY/RESEND_FROM.");
-  }
-
-  if (IS_PRODUCTION && isResendTestSender()) {
-    throw new Error(
-      "Resend is using onboarding@resend.dev. Verify a domain in Resend and set RESEND_FROM, or configure Gmail SMTP."
-    );
-  }
-}
-
-function hasResendProvider() {
-  return Boolean(resend);
-}
-
-async function sendWithResend({ to, subject, html }) {
-  if (!resend) {
-    throw new Error("Resend API key is not configured");
-  }
-
-  if (IS_PRODUCTION && isResendTestSender()) {
-    throw new Error("Resend production sending requires a verified RESEND_FROM sender");
-  }
-
-  await resend.emails.send({
-    from: RESEND_FROM,
-    to,
-    subject,
-    html
-  });
+  throw new Error("SMTP email is not configured. Set EMAIL_USER and EMAIL_PASS.");
 }
 
 const DEFAULT_SITE_URL = `http://localhost:${process.env.PORT || 3000}`;
@@ -158,36 +118,20 @@ async function sendOTP(email, otp) {
   const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
 
   // SMTP first — works with ANY recipient, no domain restrictions
-  if (smtpTransporter) {
-    try {
-      await sendEmailFallback({
-        to: email,
-        subject: "SmritiCare - Email Verification",
-        html: htmlContent
-      });
-      console.log(` OTP sent to ${email} via SMTP`);
-      return;
-    } catch (smtpErr) {
-      if (!hasResendProvider()) {
-        console.error(" SMTP failed and Resend is not configured:", smtpErr.message);
-        throw smtpErr;
-      }
-      console.error(" SMTP failed, trying Resend:", smtpErr.message);
-    }
+  if (!smtpTransporter) {
+    throw new Error("SMTP email is not configured");
   }
 
-  // Resend fallback — only reaches here if SMTP not configured or failed
-  // NOTE: without a verified domain, Resend only delivers to your own account email
   try {
-    await sendWithResend({
+    await sendEmailFallback({
       to: email,
       subject: "SmritiCare - Email Verification",
       html: htmlContent
     });
-    console.log(` OTP sent to ${email} via Resend`);
-  } catch (err) {
-    console.error(" Failed to send OTP email via Resend:", err);
-    throw new Error("Failed to send verification email");
+    console.log(` OTP sent to ${email} via SMTP`);
+  } catch (smtpErr) {
+    console.error(" SMTP failed:", smtpErr.message);
+    throw smtpErr;
   }
 }
 
@@ -204,35 +148,20 @@ async function sendPasswordResetCode(email, otp) {
   const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
 
   // SMTP first — works with ANY recipient, no domain restrictions
-  if (smtpTransporter) {
-    try {
-      await sendEmailFallback({
-        to: email,
-        subject: "SmritiCare - Password Reset Code",
-        html: htmlContent
-      });
-      console.log(` Password reset code sent to ${email} via SMTP`);
-      return;
-    } catch (smtpErr) {
-      if (!hasResendProvider()) {
-        console.error(" SMTP failed and Resend is not configured:", smtpErr.message);
-        throw smtpErr;
-      }
-      console.error(" SMTP failed, trying Resend:", smtpErr.message);
-    }
+  if (!smtpTransporter) {
+    throw new Error("SMTP email is not configured");
   }
 
-  // Resend fallback
   try {
-    await sendWithResend({
+    await sendEmailFallback({
       to: email,
       subject: "SmritiCare - Password Reset Code",
       html: htmlContent
     });
-    console.log(` Password reset code sent to ${email} via Resend`);
-  } catch (err) {
-    console.error(" Failed to send password reset email via Resend:", err);
-    throw new Error("Failed to send reset code");
+    console.log(` Password reset code sent to ${email} via SMTP`);
+  } catch (smtpErr) {
+    console.error(" SMTP failed:", smtpErr.message);
+    throw smtpErr;
   }
 }
 
