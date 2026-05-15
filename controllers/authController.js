@@ -13,22 +13,66 @@ const {
   buildEmailLayout
 } = require("../utils/emailTheme");
 
-const EMAIL_FROM = process.env.EMAIL_FROM || `SmritiCare <${process.env.EMAIL_USER || "onboarding@resend.dev"}>`;
-const RESEND_FROM = process.env.RESEND_FROM || "SmritiCare <no-reply@smriticare.otp@gmail.com>";
+const EMAIL_USER = (process.env.EMAIL_USER || "").trim();
+// Gmail app passwords are often copied as "abcd efgh ijkl mnop".
+// SMTP expects the raw 16-character value, so remove whitespace.
+const EMAIL_PASS = (process.env.EMAIL_PASS || "").replace(/\s+/g, "").trim();
+const EMAIL_FROM = (process.env.EMAIL_FROM || `SmritiCare <${EMAIL_USER || "onboarding@resend.dev"}>`).trim();
+const RESEND_API_KEY = (process.env.RESEND_API_KEY || "").trim();
+const RESEND_FROM = (process.env.RESEND_FROM || "SmritiCare <onboarding@resend.dev>").trim();
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 let smtpTransporter = null;
-if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+if (EMAIL_USER && EMAIL_PASS) {
   smtpTransporter = nodemailer.createTransport({
     service: "gmail",
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
+      user: EMAIL_USER,
+      pass: EMAIL_PASS
     }
   });
 }
 
 /* RESEND SETUP */
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+
+function isResendTestSender() {
+  return /onboarding@resend\.dev/i.test(RESEND_FROM);
+}
+
+function assertEmailProviderReady() {
+  if (smtpTransporter) return;
+
+  if (!resend) {
+    throw new Error("No email provider configured. Set EMAIL_USER/EMAIL_PASS or RESEND_API_KEY/RESEND_FROM.");
+  }
+
+  if (IS_PRODUCTION && isResendTestSender()) {
+    throw new Error(
+      "Resend is using onboarding@resend.dev. Verify a domain in Resend and set RESEND_FROM, or configure Gmail SMTP."
+    );
+  }
+}
+
+async function sendWithResend({ to, subject, html }) {
+  if (!resend) {
+    throw new Error("Resend API key is not configured");
+  }
+
+  if (IS_PRODUCTION && isResendTestSender()) {
+    throw new Error("Resend production sending requires a verified RESEND_FROM sender");
+  }
+
+  await resend.emails.send({
+    from: RESEND_FROM,
+    to,
+    subject,
+    html
+  });
+}
 
 const DEFAULT_SITE_URL = `http://localhost:${process.env.PORT || 3000}`;
 const SITE_URL = (process.env.APP_BASE_URL || process.env.APP_URL || DEFAULT_SITE_URL).trim();
@@ -98,6 +142,8 @@ async function sendEmailFallback({ to, subject, html, text }) {
 }
 
 async function sendOTP(email, otp) {
+  assertEmailProviderReady();
+
   const title = "Email Verification";
   const subtitle = "Use the OTP below to verify your SmritiCare account and continue setup.";
   const note = "If you did not request this, please ignore this email.";
@@ -121,8 +167,7 @@ async function sendOTP(email, otp) {
   // Resend fallback — only reaches here if SMTP not configured or failed
   // NOTE: without a verified domain, Resend only delivers to your own account email
   try {
-    await resend.emails.send({
-      from: RESEND_FROM,
+    await sendWithResend({
       to: email,
       subject: "SmritiCare - Email Verification",
       html: htmlContent
@@ -139,6 +184,8 @@ function generateOTP() {
 }
 
 async function sendPasswordResetCode(email, otp) {
+  assertEmailProviderReady();
+
   const title = "Password Reset Code";
   const subtitle = "Use this OTP to securely reset your SmritiCare password.";
   const note = "If you did not request a password reset, you can ignore this email.";
@@ -161,8 +208,7 @@ async function sendPasswordResetCode(email, otp) {
 
   // Resend fallback
   try {
-    await resend.emails.send({
-      from: RESEND_FROM,
+    await sendWithResend({
       to: email,
       subject: "SmritiCare - Password Reset Code",
       html: htmlContent
@@ -272,6 +318,7 @@ exports.signup = async (req, res) => {
     try {
       await sendOTP(email, otp);
     } catch (emailErr) {
+      console.error("Signup OTP email failed:", emailErr.message || emailErr);
       // Delete user and related data if email fails
       await User.findByIdAndDelete(user._id);
       if (role === "patient") {
@@ -519,6 +566,7 @@ exports.resendOTP = async (req, res) => {
       await sendOTP(user.email, otp);
       console.log(` OTP resent to ${user.email}`);
     } catch (emailErr) {
+      console.error("Resend OTP email failed:", emailErr.message || emailErr);
       return res.status(500).json({ error: "Failed to send email. Please try again." });
     }
 
