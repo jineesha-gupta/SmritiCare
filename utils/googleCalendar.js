@@ -2,11 +2,11 @@
 const { google } = require("googleapis");
 
 function getOAuthClient() {
-  return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
+  const clientId = (process.env.GOOGLE_CLIENT_ID || "").trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
+  const redirectUri = (process.env.GOOGLE_REDIRECT_URI || "").trim();
+
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
 function getAuthClientForUser(tokens) {
