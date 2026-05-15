@@ -14,7 +14,7 @@ const {
 } = require("../utils/emailTheme");
 
 const EMAIL_FROM = process.env.EMAIL_FROM || `SmritiCare <${process.env.EMAIL_USER || "onboarding@resend.dev"}>`;
-const RESEND_FROM = process.env.RESEND_FROM || "SmritiCare <onboarding@resend.dev>";
+const RESEND_FROM = process.env.RESEND_FROM || "SmritiCare <no-reply@smriticare.otp@gmail.com>";
 
 let smtpTransporter = null;
 if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
