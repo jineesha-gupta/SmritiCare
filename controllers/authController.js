@@ -1,5 +1,4 @@
 const bcrypt = require("bcryptjs");
-const nodemailer = require("nodemailer");
 const User = require("../models/User");
 const PatientProfile = require("../models/PatientProfile");
 const CaregiverProfile = require("../models/CaregiverProfile");
@@ -11,36 +10,10 @@ const {
   escapeHtml,
   buildEmailLayout
 } = require("../utils/emailTheme");
-
-const EMAIL_USER = (process.env.EMAIL_USER || "").trim();
-// Gmail app passwords are often copied as "abcd efgh ijkl mnop".
-// SMTP expects the raw 16-character value, so remove whitespace.
-const EMAIL_PASS = (process.env.EMAIL_PASS || "").replace(/\s+/g, "").trim();
-const EMAIL_FROM = (process.env.EMAIL_FROM || `SmritiCare <${EMAIL_USER || "noreply@smriticare.app"}>`).trim();
-const SMTP_HOST = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-
-let smtpTransporter = null;
-if (EMAIL_USER && EMAIL_PASS) {
-  smtpTransporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_PORT === 465,
-    requireTLS: SMTP_PORT !== 465,
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-    logger: true,
-    debug: true,
-    auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_PASS
-    }
-  });
-}
+const { transporter, EMAIL_FROM } = require("../utils/emailTransport");
 
 function assertEmailProviderReady() {
-  if (smtpTransporter) return;
+  if (transporter) return;
 
   throw new Error("SMTP email is not configured. Set EMAIL_USER and EMAIL_PASS.");
 }
@@ -99,11 +72,11 @@ function buildCodeEmailTemplate({ title, subtitle, code, note, logoSrc }) {
 }
 
 async function sendEmailFallback({ to, subject, html, text }) {
-  if (!smtpTransporter) {
+  if (!transporter) {
     throw new Error("SMTP email fallback is not configured");
   }
 
-  await smtpTransporter.sendMail({
+  await transporter.sendMail({
     from: EMAIL_FROM,
     to,
     subject,
@@ -121,7 +94,7 @@ async function sendOTP(email, otp) {
   const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
 
   // SMTP first — works with ANY recipient, no domain restrictions
-  if (!smtpTransporter) {
+  if (!transporter) {
     throw new Error("SMTP email is not configured");
   }
 
@@ -151,7 +124,7 @@ async function sendPasswordResetCode(email, otp) {
   const htmlContent = buildCodeEmailTemplate({ title, subtitle, code: otp, note, logoSrc: null });
 
   // SMTP first — works with ANY recipient, no domain restrictions
-  if (!smtpTransporter) {
+  if (!transporter) {
     throw new Error("SMTP email is not configured");
   }
 

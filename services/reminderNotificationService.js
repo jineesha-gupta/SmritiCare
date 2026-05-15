@@ -1,4 +1,3 @@
-const nodemailer = require("nodemailer");
 const User = require("../models/User");
 const {
   EMAIL_LOGO_CID,
@@ -6,22 +5,11 @@ const {
   escapeHtml,
   buildEmailLayout
 } = require("../utils/emailTheme");
+const { transporter, emailConfigured } = require("../utils/emailTransport");
 
 const CHECK_INTERVAL_MS = 5 * 60 * 60 * 1000;
 const DEFAULT_SITE_URL = `http://localhost:${process.env.PORT || 3000}`;
 const SITE_URL = (process.env.APP_BASE_URL || process.env.APP_URL || DEFAULT_SITE_URL).trim().replace(/\/$/, "");
-
-const emailConfigured = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
-
-const transporter = emailConfigured
-  ? nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    })
-  : null;
 
 let intervalRef = null;
 let inFlight = false;
