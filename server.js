@@ -8,6 +8,8 @@ const connectDB = require("./config/db");
 
 const app = express();
 
+app.set("trust proxy", 1);
+
 /* DATABASE CONNECTION */
 connectDB();
 
@@ -16,6 +18,8 @@ connectDB();
 // Body parsers
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+const isProduction = process.env.NODE_ENV === "production";
 
 // Session configuration
 app.use(
@@ -33,7 +37,7 @@ app.use(
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       maxAge: 1000 * 60 * 60 * 24,
-      sameSite: "lax"
+      sameSite: isProduction ? "none" : "lax"
     }
   })
 );

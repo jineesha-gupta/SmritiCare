@@ -263,7 +263,7 @@ exports.signup = async (req, res) => {
     try {
       await sendOTP(email, otp);
     } catch (emailErr) {
-      // Delete user if email fails
+      // Delete user and related data if email fails
       await User.findByIdAndDelete(user._id);
       if (role === "patient") {
         await PatientProfile.deleteOne({ userId: user._id });
@@ -274,16 +274,24 @@ exports.signup = async (req, res) => {
       return res.status(500).json({ error: "Failed to send verification email. Please try again." });
     }
 
-    // Store user ID in temporary session
+    // Store user ID in temporary session.
+    // IMPORTANT: Use the callback form of session.save() so the HTTP response
+    // is only sent AFTER the session document is confirmed written to MongoDB.
+    // Using `await session.save()` can return before the MongoStore flush
+    // completes — the browser's next request then arrives with no session cookie
+    // data, causing the /auth/verify-otp route to redirect back to signup.
     req.session.tempUser = user._id.toString();
-    await req.session.save();
-
-    console.log(`Session saved for signup: tempUser = ${req.session.tempUser}`);
-
-    return res.json({
-      success: true,
-      redirect: "/auth/verify-otp",
-      message: "OTP sent to your email"
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error("Session save error (signup):", saveErr);
+        return res.status(500).json({ error: "Session error. Please try again." });
+      }
+      console.log(`Session saved for signup: tempUser = ${req.session.tempUser}`);
+      return res.json({
+        success: true,
+        redirect: "/auth/verify-otp",
+        message: "OTP sent to your email"
+      });
     });
 
   } catch (err) {
@@ -340,7 +348,8 @@ exports.verifyOTP = async (req, res) => {
 
     console.log(` Email verified for ${user.email}`);
 
-    // Create actual session
+    // Swap temp session for a real user session in one atomic write.
+    // Both changes (set user, delete tempUser) go into the same save call.
     req.session.user = {
       id: user._id.toString(),
       role: user.role,
@@ -348,22 +357,23 @@ exports.verifyOTP = async (req, res) => {
       name: user.name,
       email: user.email
     };
-
-    // Clear temporary session
     delete req.session.tempUser;
 
-    // Save session
-    await req.session.save();
-
-    // Determine redirect
     const redirect = user.role === "patient"
       ? "/patient/welcome"
       : "/caregiver/link";
 
-    return res.json({
-      success: true,
-      redirect,
-      message: "Email verified successfully"
+    // Callback form: response only sent after MongoDB confirms the write.
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error("Session save error (verifyOTP):", saveErr);
+        return res.status(500).json({ error: "Session error. Please try again." });
+      }
+      return res.json({
+        success: true,
+        redirect,
+        message: "Email verified successfully"
+      });
     });
 
   } catch (err) {
@@ -406,7 +416,7 @@ exports.login = async (req, res) => {
 
     console.log(` User logged in: ${email}`);
 
-    // Create session with patientId if caregiver is linked
+    // Build session data
     const sessionData = {
       id: user._id.toString(),
       role: user.role,
@@ -422,10 +432,7 @@ exports.login = async (req, res) => {
 
     req.session.user = sessionData;
 
-    // Save session
-    await req.session.save();
-
-    // Determine redirect based on link status
+    // Determine redirect before the save callback (no async needed here)
     let redirect;
     if (user.role === "patient") {
       redirect = user.linked ? "/patient/dashboard" : "/patient/welcome";
@@ -433,10 +440,17 @@ exports.login = async (req, res) => {
       redirect = user.linked ? "/caregiver/dashboard" : "/caregiver/link";
     }
 
-    return res.json({
-      success: true,
-      redirect,
-      message: "Login successful"
+    // Callback form: dashboard redirect only sent after session is confirmed written.
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error("Session save error (login):", saveErr);
+        return res.status(500).json({ error: "Session error. Please try again." });
+      }
+      return res.json({
+        success: true,
+        redirect,
+        message: "Login successful"
+      });
     });
 
   } catch (err) {
@@ -455,7 +469,7 @@ exports.logout = (req, res) => {
       return res.status(500).send("Logout failed");
     }
 
-    console.log(` User logged out: ${userEmail || 'unknown'}`);
+    console.log(` User logged out: ${userEmail || "unknown"}`);
     res.clearCookie("smriticare.sid");
     res.redirect("/auth/login");
   });
@@ -520,13 +534,13 @@ exports.connectGoogleCalendar = (req, res) => {
 /* GOOGLE CALENDAR - Google redirects back here after user approves */
 exports.googleCalendarCallback = async (req, res) => {
   try {
-    // FIX: Get userId from SESSION (where user is logged in), not from URL state
+    // Use userId from SESSION (where user is logged in), not from URL state
     if (!req.session.user || !req.session.user.id) {
       console.error("[AUTH] No session user found in callback");
       return res.redirect("/auth/login?error=session_expired");
     }
 
-    const userId = req.session.user.id;  // ← FIX: Use session ID, not state!
+    const userId = req.session.user.id;
     const { code, state } = req.query;
 
     if (!code) {
@@ -558,15 +572,21 @@ exports.googleCalendarCallback = async (req, res) => {
       googleTokensExpired: false
     });
 
-    console.log("[AUTH] ✓ Google Calendar connected successfully for user:", userId);
+    console.log("[AUTH] Google Calendar connected successfully for user:", userId);
 
-    // Update session
+    // Update session with calendar status — use callback form for consistency
     if (req.session.user && req.session.user.id === userId) {
       req.session.user.googleCalendarConnected = true;
-      await req.session.save();
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error("[AUTH] Session save error (googleCalendarCallback):", saveErr);
+          // Non-fatal: calendar is already saved in DB, still redirect successfully
+        }
+        res.redirect("/caregiver/reminders?calendarConnected=true");
+      });
+    } else {
+      res.redirect("/caregiver/reminders?calendarConnected=true");
     }
-
-    res.redirect("/caregiver/reminders?calendarConnected=true");
 
   } catch (err) {
     console.error("[AUTH] Google Calendar callback error:", err.message);
@@ -623,16 +643,22 @@ exports.requestPasswordReset = async (req, res) => {
 
     await sendPasswordResetCode(user.email, otp);
 
+    // Store reset session — callback form so response is sent only after write.
     req.session.passwordReset = {
       userId: user._id.toString(),
       verified: false
     };
-    await req.session.save();
-
-    return res.json({
-      success: true,
-      message: "Reset code sent to your email"
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error("Session save error (requestPasswordReset):", saveErr);
+        return res.status(500).json({ error: "Session error. Please try again." });
+      }
+      return res.json({
+        success: true,
+        message: "Reset code sent to your email"
+      });
     });
+
   } catch (err) {
     console.error("Password reset request error:", err);
     return res.status(500).json({ error: "Failed to send reset code. Please try again." });
@@ -656,7 +682,7 @@ exports.verifyPasswordResetCode = async (req, res) => {
     const user = await User.findById(resetSession.userId);
     if (!user) {
       delete req.session.passwordReset;
-      await req.session.save();
+      req.session.save(() => {}); // best-effort clean up, no need to wait
       return res.status(400).json({ error: "User not found. Request a new code." });
     }
 
@@ -672,14 +698,20 @@ exports.verifyPasswordResetCode = async (req, res) => {
       return res.status(400).json({ error: "Reset code has expired. Request a new code." });
     }
 
+    // Mark reset session as verified — callback form.
     req.session.passwordReset.verified = true;
-    await req.session.save();
-
-    return res.json({
-      success: true,
-      message: "Code verified. You can now set a new password.",
-      redirect: "/auth/forgot-password/new-password"
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error("Session save error (verifyPasswordResetCode):", saveErr);
+        return res.status(500).json({ error: "Session error. Please try again." });
+      }
+      return res.json({
+        success: true,
+        message: "Code verified. You can now set a new password.",
+        redirect: "/auth/forgot-password/new-password"
+      });
     });
+
   } catch (err) {
     console.error("Password reset code verification error:", err);
     return res.status(500).json({ error: "Failed to verify reset code. Please try again." });
@@ -697,7 +729,7 @@ exports.resendPasswordResetCode = async (req, res) => {
     const user = await User.findById(resetSession.userId);
     if (!user) {
       delete req.session.passwordReset;
-      await req.session.save();
+      req.session.save(() => {}); // best-effort clean up
       return res.status(400).json({ error: "User not found. Request a new code." });
     }
 
@@ -710,13 +742,19 @@ exports.resendPasswordResetCode = async (req, res) => {
 
     await sendPasswordResetCode(user.email, otp);
 
+    // Reset verified flag — callback form.
     req.session.passwordReset.verified = false;
-    await req.session.save();
-
-    return res.json({
-      success: true,
-      message: "New reset code sent to your email"
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error("Session save error (resendPasswordResetCode):", saveErr);
+        return res.status(500).json({ error: "Session error. Please try again." });
+      }
+      return res.json({
+        success: true,
+        message: "New reset code sent to your email"
+      });
     });
+
   } catch (err) {
     console.error("Password reset resend error:", err);
     return res.status(500).json({ error: "Failed to resend reset code. Please try again." });
@@ -749,7 +787,7 @@ exports.resetPassword = async (req, res) => {
     const user = await User.findById(resetSession.userId);
     if (!user) {
       delete req.session.passwordReset;
-      await req.session.save();
+      req.session.save(() => {}); // best-effort clean up
       return res.status(400).json({ error: "User not found. Request a new code." });
     }
 
@@ -762,13 +800,19 @@ exports.resetPassword = async (req, res) => {
     user.otp = undefined;
     await user.save();
 
+    // Clear reset session — callback form.
     delete req.session.passwordReset;
-    await req.session.save();
-
-    return res.json({
-      success: true,
-      message: "Password reset successful. Please log in."
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error("Session save error (resetPassword):", saveErr);
+        // Non-fatal: password is already changed in DB, still return success.
+      }
+      return res.json({
+        success: true,
+        message: "Password reset successful. Please log in."
+      });
     });
+
   } catch (err) {
     console.error("Reset password error:", err);
     return res.status(500).json({ error: "Failed to reset password. Please try again." });
