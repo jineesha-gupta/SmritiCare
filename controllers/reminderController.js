@@ -48,7 +48,6 @@ exports.disconnectCalendar = (req, res) => {
 }
 // controllers/reminderController.js
 const Reminder = require("../models/Reminder");
-const User = require("../models/User");
 const {
   createCalendarEvent,
   updateCalendarEvent,
