@@ -511,7 +511,7 @@ exports.resendOTP = async (req, res) => {
       await sendOTP(user.email, otp);
       console.log(` OTP resent to ${user.email}`);
     } catch (emailErr) {
-      console.error("Resend OTP email failed:", emailErr.message || emailErr);
+      console.error("OTP email failed:", emailErr.message || emailErr);
       return res.status(500).json({ error: "Failed to send email. Please try again." });
     }
 
@@ -521,7 +521,7 @@ exports.resendOTP = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Resend OTP error:", err);
+    console.error("OTP resend error:", err);
     res.status(500).json({ error: "Failed to resend OTP. Please try again." });
   }
 };
